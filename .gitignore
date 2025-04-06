@@ -33,4 +33,10 @@ env/
 
 # OS
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Test Data
+test_data/
+*.csv
+*.png
+*.json 

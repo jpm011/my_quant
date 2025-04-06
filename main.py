@@ -3,11 +3,21 @@ import numpy as np
 import yfinance as yf
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+import json
+import os
 
 class SimpleInvestmentAnalyzer:
     def __init__(self):
         self.data = None
         self.tickers = []
+        self.test_mode = False
+        self.test_data_path = "test_data"
+        
+    def enable_test_mode(self):
+        """Enable test mode to use local test data"""
+        self.test_mode = True
+        if not os.path.exists(self.test_data_path):
+            os.makedirs(self.test_data_path)
         
     def fetch_data(self, tickers, period='1y'):
         """
@@ -20,13 +30,49 @@ class SimpleInvestmentAnalyzer:
         
         for ticker in tickers:
             try:
-                stock = yf.Ticker(ticker)
-                self.data[ticker] = stock.history(period=period)
+                if self.test_mode:
+                    # Try to load from test data
+                    test_file = os.path.join(self.test_data_path, f"{ticker}_test_data.csv")
+                    if os.path.exists(test_file):
+                        self.data[ticker] = pd.read_csv(test_file, index_col=0, parse_dates=True)
+                        print(f"Loaded test data for {ticker}")
+                    else:
+                        # Generate test data if not exists
+                        self._generate_test_data(ticker)
+                else:
+                    # Fetch real data
+                    stock = yf.Ticker(ticker)
+                    self.data[ticker] = stock.history(period=period)
                 print(f"Successfully fetched data for {ticker}")
             except Exception as e:
                 print(f"Error fetching data for {ticker}: {e}")
         
         return self.data
+    
+    def _generate_test_data(self, ticker):
+        """Generate synthetic test data for a ticker"""
+        dates = pd.date_range(start='2023-01-01', end='2023-12-31', freq='D')
+        np.random.seed(42)  # For reproducibility
+        
+        # Generate random walk for prices
+        price_changes = np.random.normal(0.001, 0.02, len(dates))
+        prices = 100 * (1 + np.cumsum(price_changes))
+        
+        # Create DataFrame
+        df = pd.DataFrame({
+            'Open': prices * (1 + np.random.normal(0, 0.001, len(dates))),
+            'High': prices * (1 + np.abs(np.random.normal(0, 0.002, len(dates)))),
+            'Low': prices * (1 - np.abs(np.random.normal(0, 0.002, len(dates)))),
+            'Close': prices,
+            'Volume': np.random.randint(1000000, 5000000, len(dates))
+        }, index=dates)
+        
+        # Save test data
+        test_file = os.path.join(self.test_data_path, f"{ticker}_test_data.csv")
+        df.to_csv(test_file)
+        
+        self.data[ticker] = df
+        print(f"Generated test data for {ticker}")
     
     def calculate_metrics(self, ticker):
         """Calculate basic investment metrics for a given ticker"""
@@ -84,6 +130,13 @@ class SimpleInvestmentAnalyzer:
         plt.legend()
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
+        
+        # Save plot in test mode
+        if self.test_mode:
+            plot_path = os.path.join(self.test_data_path, f"{ticker}_plot.png")
+            plt.savefig(plot_path)
+            print(f"Saved plot to {plot_path}")
+        
         plt.show()
     
     def generate_report(self, ticker):
@@ -92,14 +145,16 @@ class SimpleInvestmentAnalyzer:
         if not metrics:
             return
             
-        print(f"\n==== Investment Analysis for {ticker} ====")
-        print(f"Current Price: ${metrics['current_price']:.2f}")
-        print(f"50-day Moving Average: ${metrics['ma50']:.2f}")
-        print(f"200-day Moving Average: ${metrics['ma200']:.2f}")
-        print(f"Current Trend: {metrics['trend']}")
-        print(f"Annualized Return: {metrics['annualized_return']*100:.2f}%")
-        print(f"Annualized Volatility: {metrics['volatility']*100:.2f}%")
-        print(f"Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
+        report = {
+            "ticker": ticker,
+            "current_price": metrics['current_price'],
+            "ma50": metrics['ma50'],
+            "ma200": metrics['ma200'],
+            "trend": metrics['trend'],
+            "annualized_return": metrics['annualized_return'],
+            "volatility": metrics['volatility'],
+            "sharpe_ratio": metrics['sharpe_ratio']
+        }
         
         # Simple recommendation based on trend and Sharpe ratio
         if metrics['trend'] == 'Bullish' and metrics['sharpe_ratio'] > 1:
@@ -111,6 +166,24 @@ class SimpleInvestmentAnalyzer:
         else:
             recommendation = "Consider Selling/Avoiding: Negative trend with poor risk-adjusted returns"
             
+        report["recommendation"] = recommendation
+        
+        # Save report in test mode
+        if self.test_mode:
+            report_path = os.path.join(self.test_data_path, f"{ticker}_report.json")
+            with open(report_path, 'w') as f:
+                json.dump(report, f, indent=4)
+            print(f"Saved report to {report_path}")
+        
+        # Print report
+        print(f"\n==== Investment Analysis for {ticker} ====")
+        print(f"Current Price: ${metrics['current_price']:.2f}")
+        print(f"50-day Moving Average: ${metrics['ma50']:.2f}")
+        print(f"200-day Moving Average: ${metrics['ma200']:.2f}")
+        print(f"Current Trend: {metrics['trend']}")
+        print(f"Annualized Return: {metrics['annualized_return']*100:.2f}%")
+        print(f"Annualized Volatility: {metrics['volatility']*100:.2f}%")
+        print(f"Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
         print(f"Simple Recommendation: {recommendation}")
         print("\nNote: This is a basic analysis. Real investment decisions should consider")
         print("additional factors and ideally be made with professional financial advice.")
@@ -118,12 +191,15 @@ class SimpleInvestmentAnalyzer:
         # Visualize the stock
         self.visualize_stock(ticker)
         
-        return metrics
+        return report
 
 
 # Example usage
 if __name__ == "__main__":
     analyzer = SimpleInvestmentAnalyzer()
+    
+    # Enable test mode
+    analyzer.enable_test_mode()
     
     # Fetch data for a few tech stocks
     tickers = ['AAPL', 'MSFT', 'GOOGL']
